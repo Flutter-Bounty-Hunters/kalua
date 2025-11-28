@@ -8,7 +8,7 @@ void main() {
       fakeAsync((async) {
         final doc = CodeDocument('');
         doc.insert(0, 'hello');
-        async.elapse(const Duration(milliseconds: 751)); // end batch
+        async.elapse(CodeDocument.batchInterval); // end batch
 
         expect(doc.text, 'hello');
         expect(doc.canUndo, true);
@@ -30,9 +30,9 @@ void main() {
       fakeAsync((async) {
         final doc = CodeDocument('abcdef');
         doc.delete(offset: 2, count: 3); // delete cde
-        async.elapse(const Duration(milliseconds: 501));
-
         expect(doc.text, 'abf');
+
+        async.elapse(CodeDocument.batchInterval);
 
         doc.undo();
         expect(doc.text, 'abcdef');
@@ -47,13 +47,13 @@ void main() {
         final doc = CodeDocument('');
 
         doc.insert(0, 'a');
-        async.elapse(const Duration(milliseconds: 751));
+        async.elapse(CodeDocument.batchInterval);
 
         doc.insert(1, 'b');
-        async.elapse(const Duration(milliseconds: 751));
+        async.elapse(CodeDocument.batchInterval);
 
         doc.insert(2, 'c');
-        async.elapse(const Duration(milliseconds: 751));
+        async.elapse(CodeDocument.batchInterval);
 
         expect(doc.text, 'abc');
 
@@ -102,7 +102,7 @@ void main() {
         doc.insert(4, 'o');
 
         // Now end the batch
-        async.elapse(const Duration(milliseconds: 751));
+        async.elapse(CodeDocument.batchInterval);
 
         expect(doc.text, 'hello');
         expect(doc.canUndo, true);
@@ -118,10 +118,10 @@ void main() {
         final doc = CodeDocument('');
 
         doc.insert(0, 'h');
-        async.elapse(const Duration(milliseconds: 751)); // batch ends
+        async.elapse(CodeDocument.batchInterval); // batch ends
 
         doc.insert(1, 'i');
-        async.elapse(const Duration(milliseconds: 751)); // batch ends
+        async.elapse(CodeDocument.batchInterval); // batch ends
 
         expect(doc.text, 'hi');
 
@@ -144,7 +144,7 @@ void main() {
         async.elapse(const Duration(milliseconds: 50));
 
         doc.delete(offset: 3, count: 1); // delete d
-        async.elapse(const Duration(milliseconds: 751)); // end batch
+        async.elapse(CodeDocument.batchInterval); // end batch
 
         expect(doc.text, 'abc');
 
@@ -163,13 +163,57 @@ void main() {
 
         doc.delete(offset: 1, count: 1); // remove b → aXc
         expect(doc.text, 'acX');
-        async.elapse(const Duration(milliseconds: 751));
+        async.elapse(CodeDocument.batchInterval);
 
         doc.undo(); // undo delete
         expect(doc.text, 'abcX');
 
         doc.undo(); // undo insert
         expect(doc.text, 'abc');
+      });
+    });
+
+    test('overlapping batches: quick typing, pause, more typing', () {
+      fakeAsync((async) {
+        final doc = CodeDocument('');
+
+        // First batch: type 'h', 'e', 'l' quickly
+        doc.insert(0, 'h');
+        async.elapse(const Duration(milliseconds: 100));
+
+        doc.insert(1, 'e');
+        async.elapse(const Duration(milliseconds: 100));
+
+        doc.insert(2, 'l');
+        async.elapse(CodeDocument.batchInterval); // first batch ends
+
+        // Second batch: pause long enough, then type 'l', 'o'
+        async.elapse(const Duration(milliseconds: 800)); // simulate pause longer than batch interval
+
+        doc.insert(3, 'l');
+        async.elapse(const Duration(milliseconds: 100));
+
+        doc.insert(4, 'o');
+        async.elapse(CodeDocument.batchInterval); // second batch ends
+
+        expect(doc.text, 'hello');
+        expect(doc.canUndo, true);
+
+        // Undo: should remove the second batch ('lo')
+        doc.undo();
+        expect(doc.text, 'hel');
+
+        // Undo again: should remove the first batch ('hel')
+        doc.undo();
+        expect(doc.text, '');
+
+        // Redo: first batch restored
+        doc.redo();
+        expect(doc.text, 'hel');
+
+        // Redo: second batch restored
+        doc.redo();
+        expect(doc.text, 'hello');
       });
     });
   });
@@ -200,13 +244,13 @@ void main() {
         final doc = CodeDocument('abc');
 
         doc.insert(0, 'X'); // Xabc
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
 
         doc.insert(4, 'Y'); // XabcY
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
 
         doc.insert(2, 'Z'); // XaZbcY
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
 
         expect(doc.text, 'XaZbcY');
 
@@ -234,7 +278,7 @@ void main() {
       fakeAsync((async) {
         final doc = CodeDocument('hello\nworld');
         doc.delete(offset: 0, count: doc.length);
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
 
         expect(doc.text, '');
 
@@ -251,11 +295,11 @@ void main() {
         final doc = CodeDocument('a\nb\nc');
 
         doc.insert(4, '\nX\nY');
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
         expect(doc.text, 'a\nb\n\nX\nYc');
 
         doc.delete(offset: 2, count: 3);
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
         expect(doc.text, 'a\nX\nYc');
 
         doc.undo();
@@ -271,10 +315,10 @@ void main() {
         final doc = CodeDocument('abc');
 
         doc.insert(3, '123'); // abc123
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
 
         doc.delete(offset: 1, count: 2); // a123
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
 
         expect(doc.text, 'a123');
 
@@ -299,7 +343,7 @@ void main() {
         final doc = CodeDocument('a\nb\nc');
 
         doc.insert(1, 'X\nY');
-        async.elapse(const Duration(milliseconds: 501));
+        async.elapse(CodeDocument.batchInterval);
 
         expect(doc.text, 'aX\nY\nb\nc');
         expect(doc.offsetToLineColumn(0), (0, 0));

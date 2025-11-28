@@ -1,8 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:kalua/src/code/piece_table.dart';
 
 class CodeDocument {
+  @visibleForTesting
+  static const batchInterval = Duration(milliseconds: 750);
+
   CodeDocument(String text) : _pieceTable = PieceTable(text), _lineStarts = [0] {
     _rebuildLineIndex();
   }
@@ -75,14 +79,13 @@ class CodeDocument {
   final List<_EditAction> _redoStack = [];
   bool _suppressingHistory = false;
 
-  static const _batchInterval = Duration(milliseconds: 750);
   _EditAction? _pendingBatch;
   DateTime? _lastEditTime;
   Timer? _batchTimer;
 
   void _startBatchTimer() {
     _batchTimer?.cancel();
-    _batchTimer = Timer(_batchInterval, () {
+    _batchTimer = Timer(batchInterval, () {
       _commitPendingBatch();
     });
   }
@@ -95,7 +98,7 @@ class CodeDocument {
         _pendingBatch != null &&
         action.canBatchWith(_pendingBatch!) &&
         _lastEditTime != null &&
-        now.difference(_lastEditTime!) < _batchInterval;
+        now.difference(_lastEditTime!) < batchInterval;
 
     if (shouldBatch) {
       // Merge into existing batch
