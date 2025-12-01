@@ -1,6 +1,7 @@
 import 'dart:async';
+import 'dart:ui';
 
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:kalua/src/code/piece_table.dart';
 
 class CodeDocument {
@@ -19,21 +20,242 @@ class CodeDocument {
   String get text => _pieceTable.getText();
   int get length => _pieceTable.length;
 
+  // ----- START TOKENS --------
+  TokenProvider? tokenProvider;
+  List<TokenSpan> _tokens = const [];
+  List<TokenSpan> get tokens => _tokens;
+  final _tokenChangeListeners = <TokenChangeListener>{};
+
+  bool highlightCurrentLine = true;
+  bool highlightMatchingBracket = true;
+  bool highlightIdentifierOccurrences = true;
+
+  TextRange? _lastEditRange;
+
+  void addTokenChangeListener(TokenChangeListener listener) {
+    _tokenChangeListeners.add(listener);
+  }
+
+  void removeTokenChangeListener(TokenChangeListener listener) {
+    _tokenChangeListeners.remove(listener);
+  }
+
+  void _notifyTokenChangeListeners(List<TokenSpan> tokens) {
+    for (final listener in _tokenChangeListeners) {
+      listener(tokens);
+    }
+  }
+
+  /// Returns all tokens that overlap the current selection or cursor position.
+  /// If there is no selection, this returns an empty list.
+  List<TokenSpan> tokensInSelection() {
+    if (selectionStart < 0 || selectionEnd < 0) {
+      return const [];
+    }
+
+    final selStart = selectionStart;
+    final selEnd = selectionEnd;
+
+    if (selStart == selEnd) {
+      // Cursor case: include tokens containing the cursor position
+      return _tokens.where((t) => selStart >= t.start && selStart < t.end).toList();
+    }
+
+    // Range case: include any token that overlaps the range [selStart, selEnd)
+    return _tokens.where((t) {
+      return !(t.end <= selStart || t.start >= selEnd);
+    }).toList();
+  }
+
+  List<TokenSpan> tokensInRange(int start, int end) {
+    if (start == end) {
+      // Cursor case: include tokens containing the cursor position
+      return _tokens.where((t) => start >= t.start && end < t.end).toList();
+    }
+
+    // Range case: include any token that overlaps the range [selStart, selEnd)
+    return _tokens.where((t) {
+      return !(t.end <= start || t.start >= end);
+    }).toList();
+  }
+
+  void _recomputeTokens() {
+    if (tokenProvider == null) {
+      _tokens = const [];
+      _notifyTokenChangeListeners(_tokens);
+      return;
+    }
+
+    if (_lastEditRange == null) {
+      // No recent edit info → full tokenize
+      _tokens = tokenProvider!.tokenize(text);
+    } else {
+      final range = _lastEditRange!;
+      final partial = tokenProvider!.tokenizePartial(
+        fullText: text,
+        range: TextRange(start: range.start, end: range.end),
+      );
+
+      if (partial == null) {
+        // fallback to full
+        _tokens = tokenProvider!.tokenize(text);
+      } else {
+        // merge partial tokens with old tokens outside the edited region
+        final newTokens = <TokenSpan>[];
+
+        // Tokens before edited range
+        newTokens.addAll(_tokens.where((t) => t.end <= range.start));
+
+        // Tokens from partial
+        newTokens.addAll(partial);
+
+        // Tokens after edited range
+        newTokens.addAll(_tokens.where((t) => t.start >= range.end));
+
+        _tokens = newTokens;
+      }
+    }
+
+    _notifyTokenChangeListeners(_tokens);
+
+    // Clear lastEditRange so next edit will compute again
+    _lastEditRange = null;
+  }
+  // ----- END TOKENS --------
+
   void insert(int offset, String text) {
     _pieceTable.insert(offset, text);
     _updateLineIndexIncremental(offset, 0, text);
     _recordEdit(_InsertAction(offset, text));
 
+    // Record the affected range
+    _lastEditRange = TextRange(start: offset, end: offset + text.length);
+
+    _recomputeTokens();
     _startBatchTimer();
   }
 
   void delete({required int offset, required int count}) {
-    final deletedText = text.substring(offset, offset + count);
+    final deletedText = this.text.substring(offset, offset + count);
     _pieceTable.delete(offset: offset, count: count);
     _updateLineIndexIncremental(offset, count, '');
     _recordEdit(_DeleteAction(offset, deletedText));
 
+    // Record the affected range
+    _lastEditRange = TextRange(start: offset, end: offset);
+
+    _recomputeTokens();
     _startBatchTimer();
+  }
+
+  /// The start of the selection. If equal to [selectionEnd], the selection is collapsed (cursor).
+  int selectionStart = -1;
+
+  /// The end of the selection. If equal to [selectionStart], the selection is collapsed (cursor).
+  int selectionEnd = -1;
+
+  /// Returns true if there is an active selection (start != end)
+  bool get hasSelection => selectionStart >= 0 && selectionEnd >= 0 && selectionStart != selectionEnd;
+
+  /// Returns the current cursor position (same as [selectionEnd])
+  int get cursor => selectionEnd;
+
+  /// Sets the selection range. Automatically normalizes so that start <= end.
+  void setSelection(int start, int end) {
+    start = start.clamp(0, length);
+    end = end.clamp(0, length);
+    selectionStart = start;
+    selectionEnd = end;
+  }
+
+  /// Collapse the selection to one end (default: end)
+  void collapseSelection({bool toStart = false}) {
+    if (toStart) {
+      selectionEnd = selectionStart;
+    } else {
+      selectionStart = selectionEnd;
+    }
+  }
+
+  /// Extend the selection to a new cursor position, keeping the anchor fixed
+  void extendSelection(int newEnd) {
+    newEnd = newEnd.clamp(0, length);
+    selectionEnd = newEnd;
+  }
+
+  /// Inserts text at a collapsed selection.
+  void insertAtCursor(String text) {
+    replaceSelection(text);
+  }
+
+  /// Deletes a range defined by selection.
+  void deleteSelection() {
+    replaceSelection('');
+  }
+
+  /// Replaces the text in the range [start, end) with [replacement].
+  /// Fully integrated with undo/redo, line indexing, tokenization, and batching.
+  void replaceRange(int start, int end, String replacement) {
+    assert(start >= 0 && end >= start && end <= length);
+
+    // Normalize
+    start = start.clamp(0, length);
+    end = end.clamp(start, length);
+
+    final deleteCount = end - start;
+
+    // ---- DELETE PHASE ----
+    if (deleteCount > 0) {
+      final deletedText = text.substring(start, end);
+      _pieceTable.delete(offset: start, count: deleteCount);
+      _updateLineIndexIncremental(start, deleteCount, '');
+      _recordEdit(_DeleteAction(start, deletedText));
+    }
+
+    // ---- INSERT PHASE ----
+    if (replacement.isNotEmpty) {
+      _pieceTable.insert(start, replacement);
+      _updateLineIndexIncremental(start, 0, replacement);
+      _recordEdit(_InsertAction(start, replacement));
+    }
+
+    // Record the affected range for incremental tokenization
+    _lastEditRange = TextRange(start: start, end: start + replacement.length);
+
+    // Recompute tokens (incremental if provider supports it)
+    _recomputeTokens();
+
+    _startBatchTimer();
+  }
+
+  void replaceSelection(String replacement) {
+    if (selectionStart < 0 || selectionEnd < 0) {
+      return;
+    }
+
+    final start = selectionStart;
+    final end = selectionEnd;
+
+    replaceRange(start, end, replacement);
+
+    // Move cursor after inserted text
+    final newOffset = start + replacement.length;
+    selectionStart = newOffset;
+    selectionEnd = newOffset;
+  }
+
+  /// Returns the absolute offset range of the current line.
+  /// If there is no selection, returns null.
+  ({int start, int end})? get currentLineRange {
+    if (!highlightCurrentLine || selectionStart < 0) {
+      return null;
+    }
+
+    final startLine = offsetToLineColumn(selectionStart).$1;
+    final startOffset = getLineStart(startLine);
+    final endOffset = startLine + 1 < lineCount ? getLineStart(startLine + 1) : length;
+
+    return (start: startOffset, end: endOffset);
   }
 
   (int line, int column) offsetToLineColumn(int offset) {
@@ -178,7 +400,142 @@ class CodeDocument {
     }
     return low - 1;
   }
+
+  int? findMatchingBracket(int offset) {
+    if (!highlightMatchingBracket) return null;
+    if (offset < 0 || offset >= length) return null;
+
+    final ch = text.codeUnitAt(offset);
+    final bracket = String.fromCharCode(ch);
+    final match = _bracketPairs[bracket];
+    if (match == null) return null;
+
+    final isOpening = bracket == '(' || bracket == '{' || bracket == '[';
+    final targetCode = match.codeUnitAt(0);
+
+    int depth = 1;
+
+    if (isOpening) {
+      // Forward search
+      for (int i = offset + 1; i < length; i++) {
+        final c = text.codeUnitAt(i);
+        if (c == ch) depth++;
+        if (c == targetCode) {
+          depth--;
+          if (depth == 0) return i;
+        }
+      }
+    } else {
+      // Backward search
+      for (int i = offset - 1; i >= 0; i--) {
+        final c = text.codeUnitAt(i);
+        if (c == ch) depth++;
+        if (c == targetCode) {
+          depth--;
+          if (depth == 0) return i;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  ({int start, int end})? get matchingBracketRange {
+    if (!highlightMatchingBracket) {
+      return null;
+    }
+    if (selectionStart < 0) {
+      return null;
+    }
+
+    final pos = selectionStart;
+
+    // Try cursor left
+    int? match = findMatchingBracket(pos);
+    if (match != null) {
+      return (start: match, end: match + 1);
+    }
+
+    // Try cursor just before (if at right side of a bracket)
+    if (pos > 0) {
+      match = findMatchingBracket(pos - 1);
+      if (match != null) {
+        return (start: match, end: match + 1);
+      }
+    }
+
+    return null;
+  }
+
+  List<({int start, int end})> get identifierOccurrences {
+    final base = identifierRange;
+    if (base == null) {
+      return const [];
+    }
+
+    final name = text.substring(base.start, base.end);
+    final List<({int start, int end})> result = [];
+
+    int index = 0;
+    while (true) {
+      index = text.indexOf(name, index);
+      if (index == -1) break;
+
+      // Ensure match is a full identifier
+      final prev = index > 0 ? text.codeUnitAt(index - 1) : null;
+      final next = index + name.length < length ? text.codeUnitAt(index + name.length) : null;
+
+      if (prev != null && _isIdentifierChar(prev)) {
+        index += name.length;
+        continue;
+      }
+      if (next != null && _isIdentifierChar(next)) {
+        index += name.length;
+        continue;
+      }
+
+      result.add((start: index, end: index + name.length));
+      index += name.length;
+    }
+
+    return result;
+  }
+
+  ({int start, int end})? get identifierRange {
+    if (!highlightIdentifierOccurrences || selectionStart < 0) {
+      return null;
+    }
+
+    final pos = selectionStart;
+    if (pos < 0 || pos >= length) return null;
+
+    // Must be inside an identifier
+    if (!_isIdentifierChar(text.codeUnitAt(pos))) return null;
+
+    // Expand left
+    int start = pos;
+    while (start > 0 && _isIdentifierChar(text.codeUnitAt(start - 1))) {
+      start--;
+    }
+
+    // Expand right
+    int end = pos;
+    while (end < length && _isIdentifierChar(text.codeUnitAt(end))) {
+      end++;
+    }
+
+    return (start: start, end: end);
+  }
+
+  bool _isIdentifierChar(int code) {
+    return (code >= 0x41 && code <= 0x5A) || // A-Z
+        (code >= 0x61 && code <= 0x7A) || // a-z
+        (code >= 0x30 && code <= 0x39) || // 0-9
+        code == 0x5F; // _
+  }
 }
+
+typedef TokenChangeListener = void Function(List<TokenSpan> newTokens);
 
 class _InsertAction implements _EditAction {
   _InsertAction(this.offset, this.text);
@@ -258,3 +615,68 @@ abstract class _EditAction {
 
   _EditAction appendAtEnd(_EditAction actionToAppend) => throw UnsupportedError('Cannot merge actions');
 }
+
+class TextSelection {
+  TextSelection({required int start, required int end})
+    : start = start < end ? start : end,
+      end = start < end ? end : start;
+
+  final int start;
+  final int end;
+
+  bool get isCollapsed => start == end;
+}
+
+abstract class TokenProvider {
+  /// Tokenize the entire document into token spans.
+  List<TokenSpan> tokenize(String fullText);
+
+  /// Tokenize only a specific range.
+  ///
+  /// Implementations may:
+  /// - use the range to limit parsing work,
+  /// - or fall back to full tokenization.
+  ///
+  /// Returning `null` means "I don’t support partial tokenization; fall back to full".
+  List<TokenSpan>? tokenizePartial({required String fullText, required TextRange range});
+}
+
+class TokenSpan {
+  const TokenSpan(this.start, this.end, this.kind);
+
+  final int start;
+  final int end;
+
+  final SyntaxKind kind;
+
+  @override
+  String toString() => "[TokenSpan] - $start -> $end, $kind";
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TokenSpan &&
+          runtimeType == other.runtimeType &&
+          start == other.start &&
+          end == other.end &&
+          kind == other.kind;
+
+  @override
+  int get hashCode => start.hashCode ^ end.hashCode ^ kind.hashCode;
+}
+
+enum SyntaxKind {
+  keyword,
+  identifier,
+  string,
+  number,
+  comment,
+  operatorToken,
+  punctuation,
+  whitespace,
+  unknown,
+  @visibleForTesting
+  testToken,
+}
+
+const _bracketPairs = {'(': ')', '{': '}', '[': ']', ')': '(', '}': '{', ']': '['};
