@@ -1,68 +1,4 @@
-import 'package:flutter/material.dart';
-import 'package:inception/inception.dart';
-import 'package:kalua/kalua.dart';
-
-void main() {
-  runApp(const KaluaEditorApp());
-}
-
-class KaluaEditorApp extends StatelessWidget {
-  const KaluaEditorApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(title: 'Kalua', home: const HomeScreen());
-  }
-}
-
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  late final CodeDocument _code;
-  late final LuauSyntaxHighlighter _highlighter;
-
-  @override
-  void initState() {
-    super.initState();
-
-    _highlightExampleCode();
-  }
-
-  void _highlightExampleCode() {
-    _code = CodeDocument(_exampleCode);
-
-    _highlighter = LuauSyntaxHighlighter();
-    _highlighter.attachToDocument(_code);
-
-    print("Tokens:");
-    for (final token in _code.tokens) {
-      print(" - ${token.start} -> ${token.end}: ${token.kind}");
-    }
-    print("------");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF282828),
-      body: CodeLines(
-        codeLines: [
-          for (int i = 0; i < _highlighter.lineCount; i += 1) //
-            _highlighter.getStyledLineAt(i)!,
-        ],
-        indentLineColor: Colors.grey,
-        baseTextStyle: TextStyle(fontSize: 14, fontFamily: "SourceCodePro"),
-      ),
-    );
-  }
-}
-
-final _exampleCode = '''--[[
+--[[
     Full Luau Syntax Showcase
     Demonstrates variables, functions, classes, types, metatables, tables,
     loops, control flow, operators, coroutines, modules, and more.
@@ -266,4 +202,3 @@ function Module.demoAll()
 end
 
 return Module
-''';

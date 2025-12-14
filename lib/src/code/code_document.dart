@@ -2,7 +2,10 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:kalua/kalua.dart';
+import 'package:kalua/src/code/lexing.dart';
 import 'package:kalua/src/code/piece_table.dart';
+import 'package:kalua/src/luau/luau_lexer.dart';
 
 class CodeDocument {
   @visibleForTesting
@@ -10,21 +13,21 @@ class CodeDocument {
 
   CodeDocument(String text) : _pieceTable = PieceTable(text), _lineStarts = [0] {
     _rebuildLineIndex();
+    _recomputeTokens();
   }
 
   final PieceTable _pieceTable;
   final List<int> _lineStarts;
 
-  // ---------------- High-level public API ----------------
-
   String get text => _pieceTable.getText();
   int get length => _pieceTable.length;
 
   // ----- START TOKENS --------
-  TokenProvider? tokenProvider;
-  List<TokenSpan> _tokens = const [];
-  List<TokenSpan> get tokens => _tokens;
-  final _tokenChangeListeners = <TokenChangeListener>{};
+  Lexer? lexer;
+  List<LexerToken> _tokens = const [];
+  List<LexerToken> get tokens => _tokens;
+  int _tokenizedDocumentLength = -1;
+  final _tokenChangeListeners = <LexerTokenListener>{};
 
   bool highlightCurrentLine = true;
   bool highlightMatchingBracket = true;
@@ -32,23 +35,23 @@ class CodeDocument {
 
   TextRange? _lastEditRange;
 
-  void addTokenChangeListener(TokenChangeListener listener) {
+  void addTokenChangeListener(LexerTokenListener listener) {
     _tokenChangeListeners.add(listener);
   }
 
-  void removeTokenChangeListener(TokenChangeListener listener) {
+  void removeTokenChangeListener(LexerTokenListener listener) {
     _tokenChangeListeners.remove(listener);
   }
 
-  void _notifyTokenChangeListeners(List<TokenSpan> tokens) {
+  void _onTokensChanged(int start, int end, List<LexerToken> newTokens) {
     for (final listener in _tokenChangeListeners) {
-      listener(tokens);
+      listener.onTokensChanged(start, end, newTokens);
     }
   }
 
   /// Returns all tokens that overlap the current selection or cursor position.
   /// If there is no selection, this returns an empty list.
-  List<TokenSpan> tokensInSelection() {
+  List<LexerToken> tokensInSelection() {
     if (selectionStart < 0 || selectionEnd < 0) {
       return const [];
     }
@@ -67,7 +70,7 @@ class CodeDocument {
     }).toList();
   }
 
-  List<TokenSpan> tokensInRange(int start, int end) {
+  List<LexerToken> tokensInRange(int start, int end) {
     if (start == end) {
       // Cursor case: include tokens containing the cursor position
       return _tokens.where((t) => start >= t.start && end < t.end).toList();
@@ -80,47 +83,154 @@ class CodeDocument {
   }
 
   void _recomputeTokens() {
-    if (tokenProvider == null) {
+    final provider = lexer ?? LuauLexer();
+
+    if (text.isEmpty) {
       _tokens = const [];
-      _notifyTokenChangeListeners(_tokens);
+      _onTokensChanged(0, 0, const []);
+      _lastEditRange = null;
+      _tokenizedDocumentLength = length;
       return;
     }
 
-    if (_lastEditRange == null) {
-      // No recent edit info → full tokenize
-      _tokens = tokenProvider!.tokenize(text);
-    } else {
-      final range = _lastEditRange!;
-      final partial = tokenProvider!.tokenizePartial(
-        fullText: text,
-        range: TextRange(start: range.start, end: range.end),
-      );
+    // 🚨 Undo/redo must fully recompute
+    if (_isUndoRedo) {
+      _tokens = provider.tokenize(text);
+      _onTokensChanged(0, text.length, _tokens);
+      _lastEditRange = null;
+      _tokenizedDocumentLength = length;
+      return;
+    }
 
-      if (partial == null) {
-        // fallback to full
-        _tokens = tokenProvider!.tokenize(text);
-      } else {
-        // merge partial tokens with old tokens outside the edited region
-        final newTokens = <TokenSpan>[];
+    final editRange = _lastEditRange;
 
-        // Tokens before edited range
-        newTokens.addAll(_tokens.where((t) => t.end <= range.start));
+    // No edit info → full tokenize
+    if (editRange == null) {
+      _tokens = provider.tokenize(text);
+      _onTokensChanged(0, text.length, _tokens);
+      _tokenizedDocumentLength = length;
+      return;
+    }
 
-        // Tokens from partial
-        newTokens.addAll(partial);
+    final isMultiLineEdit = text
+        .substring(editRange.start, editRange.end.clamp(editRange.start, text.length))
+        .contains('\n');
+    if (isMultiLineEdit) {
+      // A multi-line change requires full re-tokenizing. We can avoid that
+      // by implementing incremental re-mapping, but we haven't done that yet.
+      _tokens = provider.tokenize(text);
+      _onTokensChanged(0, text.length, _tokens);
+      _lastEditRange = null;
+      _tokenizedDocumentLength = length;
 
-        // Tokens after edited range
-        newTokens.addAll(_tokens.where((t) => t.start >= range.end));
+      return;
+    }
 
-        _tokens = newTokens;
+    final didDocumentChangeLength = length != _tokenizedDocumentLength;
+    if (didDocumentChangeLength) {
+      // Due to lack of token stability during undo/redo, whenever the document changes length
+      // we have to retokenize everything. This essentially makes our incremental
+      // tokenization useless. I put this here to get tests passing again, but we need
+      // to re-work something in the document structure to avoid constant re-tokenizing.
+      _tokens = provider.tokenize(text);
+      _onTokensChanged(0, text.length, _tokens);
+      _lastEditRange = null;
+      _tokenizedDocumentLength = length;
+
+      return;
+    }
+
+    // Partial tokenization path
+    final partial = provider.tokenizePartial(fullText: text, range: editRange);
+
+    // Provider does not support partial → fallback
+    if (partial == null) {
+      _tokens = provider.tokenize(text);
+      _onTokensChanged(0, text.length, _tokens);
+      _lastEditRange = null;
+      _tokenizedDocumentLength = length;
+      return;
+    }
+
+    // Clamp edit range to valid text bounds
+    final start = editRange.start.clamp(0, text.length);
+    final end = editRange.end.clamp(0, text.length);
+
+    final before = <LexerToken>[];
+    final after = <LexerToken>[];
+
+    // Partition old tokens
+    for (final t in _tokens) {
+      if (t.end <= start) {
+        before.add(t);
+      } else if (t.start >= end) {
+        after.add(t);
       }
     }
 
-    _notifyTokenChangeListeners(_tokens);
+    // Merge = before + partial + after
+    final merged = <LexerToken>[...before, ...partial, ...after];
 
-    // Clear lastEditRange so next edit will compute again
+    // ---- Normalize tokens ----
+    merged.sort((a, b) {
+      final c = a.start.compareTo(b.start);
+      return c != 0 ? c : a.end.compareTo(b.end);
+    });
+
+    final normalized = <LexerToken>[];
+    for (final t in merged) {
+      if (normalized.isEmpty) {
+        normalized.add(t);
+        continue;
+      }
+
+      final last = normalized.last;
+
+      // Exact duplicate → skip
+      if (last.start == t.start && last.end == t.end && last.kind == t.kind) {
+        continue;
+      }
+
+      // Non-overlapping → append
+      if (t.start >= last.end) {
+        normalized.add(t);
+        continue;
+      }
+
+      // Overlap case: keep left of last if applicable
+      normalized.removeLast();
+      if (last.start < t.start) {
+        normalized.add(LexerToken(last.start, t.start, last.kind));
+      }
+      normalized.add(t);
+    }
+
+    // Debug sanity checks
+    assert(() {
+      for (final t in normalized) {
+        if (t.start < 0 || t.end > text.length || t.start >= t.end) {
+          throw StateError("Invalid token span: $t (of available text length ${text.length})");
+        }
+      }
+      for (int i = 1; i < normalized.length; i++) {
+        if (normalized[i - 1].end > normalized[i].start) {
+          throw StateError("Overlapping tokens after normalize: ${normalized[i - 1]} and ${normalized[i]}");
+        }
+      }
+      return true;
+    }());
+
+    _tokens = List.unmodifiable(normalized);
+
+    // Notify listeners about the updated region
+    _onTokensChanged(start, end, _tokens.where((t) => t.end > start && t.start < end).toList());
+
+    // Consume edit range
     _lastEditRange = null;
+
+    _tokenizedDocumentLength = length;
   }
+
   // ----- END TOKENS --------
 
   void insert(int offset, String text) {
@@ -136,7 +246,7 @@ class CodeDocument {
   }
 
   void delete({required int offset, required int count}) {
-    final deletedText = this.text.substring(offset, offset + count);
+    final deletedText = text.substring(offset, offset + count);
     _pieceTable.delete(offset: offset, count: count);
     _updateLineIndexIncremental(offset, count, '');
     _recordEdit(_DeleteAction(offset, deletedText));
@@ -275,17 +385,29 @@ class CodeDocument {
   void undo() {
     _commitPendingBatch();
     if (!canUndo) return;
-    final action = _undoStack.removeLast();
-    action.undo(this);
-    _redoStack.add(action);
+
+    _isUndoRedo = true;
+    try {
+      final action = _undoStack.removeLast();
+      action.undo(this);
+      _redoStack.add(action);
+    } finally {
+      _isUndoRedo = false;
+    }
   }
 
   void redo() {
     _commitPendingBatch();
     if (!canRedo) return;
-    final action = _redoStack.removeLast();
-    action.redo(this);
-    _undoStack.add(action);
+
+    _isUndoRedo = true;
+    try {
+      final action = _redoStack.removeLast();
+      action.redo(this);
+      _undoStack.add(action);
+    } finally {
+      _isUndoRedo = false;
+    }
   }
 
   void _commitPendingBatch() {
@@ -300,6 +422,7 @@ class CodeDocument {
   final List<_EditAction> _undoStack = [];
   final List<_EditAction> _redoStack = [];
   bool _suppressingHistory = false;
+  bool _isUndoRedo = false;
 
   _EditAction? _pendingBatch;
   DateTime? _lastEditTime;
@@ -535,8 +658,6 @@ class CodeDocument {
   }
 }
 
-typedef TokenChangeListener = void Function(List<TokenSpan> newTokens);
-
 class _InsertAction implements _EditAction {
   _InsertAction(this.offset, this.text);
 
@@ -627,56 +748,13 @@ class TextSelection {
   bool get isCollapsed => start == end;
 }
 
-abstract class TokenProvider {
-  /// Tokenize the entire document into token spans.
-  List<TokenSpan> tokenize(String fullText);
-
-  /// Tokenize only a specific range.
+abstract class LexerTokenListener {
+  /// Called after tokens in the given document range changed.
   ///
-  /// Implementations may:
-  /// - use the range to limit parsing work,
-  /// - or fall back to full tokenization.
-  ///
-  /// Returning `null` means "I don’t support partial tokenization; fall back to full".
-  List<TokenSpan>? tokenizePartial({required String fullText, required TextRange range});
-}
-
-class TokenSpan {
-  const TokenSpan(this.start, this.end, this.kind);
-
-  final int start;
-  final int end;
-
-  final SyntaxKind kind;
-
-  @override
-  String toString() => "[TokenSpan] - $start -> $end, $kind";
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is TokenSpan &&
-          runtimeType == other.runtimeType &&
-          start == other.start &&
-          end == other.end &&
-          kind == other.kind;
-
-  @override
-  int get hashCode => start.hashCode ^ end.hashCode ^ kind.hashCode;
-}
-
-enum SyntaxKind {
-  keyword,
-  identifier,
-  string,
-  number,
-  comment,
-  operatorToken,
-  punctuation,
-  whitespace,
-  unknown,
-  @visibleForTesting
-  testToken,
+  /// [start]: the starting offset of the change (inclusive)
+  /// [end]:   the ending offset of the change (exclusive)
+  /// [newTokens]: the tokens now covering that range
+  void onTokensChanged(int start, int end, List<LexerToken> newTokens);
 }
 
 const _bracketPairs = {'(': ')', '{': '}', '[': ']', ')': '(', '}': '{', ']': '['};

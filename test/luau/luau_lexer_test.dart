@@ -4,16 +4,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kalua/kalua.dart';
 
 void main() {
-  late LuauTokenProvider tokenizer;
+  late LuauLexer lexer;
 
   setUp(() {
-    tokenizer = LuauTokenProvider();
+    lexer = LuauLexer();
   });
 
-  group('LuauTokenProvider full tokenization', () {
+  group('Luau full lexing >', () {
     test('identifiers and keywords', () {
       const code = 'local x = 10 if x > 5 then return x end';
-      final tokens = tokenizer.tokenize(code);
+      final tokens = lexer.tokenize(code);
 
       final expectedKinds = [
         SyntaxKind.keyword, // local
@@ -35,7 +35,7 @@ void main() {
 
     test('strings', () {
       const code = r'''local s = "hello" local t = 'world' ''';
-      final tokens = tokenizer.tokenize(code);
+      final tokens = lexer.tokenize(code);
 
       expect(tokens.map((t) => t.kind), containsAll([SyntaxKind.string, SyntaxKind.string]));
       expect(tokens.map((t) => code.substring(t.start, t.end)), containsAll(['"hello"', "'world'"]));
@@ -43,7 +43,7 @@ void main() {
 
     test('numbers', () {
       const code = 'x = 42 y = 3.14 z = 0.5';
-      final tokens = tokenizer.tokenize(code);
+      final tokens = lexer.tokenize(code);
 
       expect(tokens.where((t) => t.kind == SyntaxKind.number).length, 3);
       expect(tokens.map((t) => code.substring(t.start, t.end)), containsAll(['42', '3.14', '0.5']));
@@ -55,14 +55,14 @@ void main() {
       //
       // Operators: + - * / % ^ = < > == <= >= # & | ~
       const code = '[ ] ( ) { } ; , + - * / % ^ = < > == <= >= # & | ~ : .';
-      final tokens = tokenizer.tokenize(code);
+      final tokens = lexer.tokenize(code);
 
       expect(tokens.where((t) => t.kind == SyntaxKind.operatorToken).length, 16);
     });
 
     test('comments', () {
       const code = '-- single line\n--[[ multi-line ]]';
-      final tokens = tokenizer.tokenize(code);
+      final tokens = lexer.tokenize(code);
 
       expect(tokens.where((t) => t.kind == SyntaxKind.comment).length, 2);
     });
@@ -74,7 +74,7 @@ if x > 0 then
     print("Hello")
 end
 ''';
-      final tokens = tokenizer.tokenize(code);
+      final tokens = lexer.tokenize(code);
 
       // Ensure at least one token of each expected kind
       expect(
@@ -90,7 +90,7 @@ end
     });
   });
 
-  group('LuauTokenProvider partial tokenization', () {
+  group('Luau incremental lexing', () {
     const code = r'''
 local x = 10
 local y = x + 5
@@ -98,7 +98,7 @@ local y = x + 5
 
     test('tokenize a single line range', () {
       final range = TextRange(start: 0, end: 12); // "local x = 10\n"
-      final tokens = tokenizer.tokenizePartial(fullText: code, range: range)!;
+      final tokens = lexer.tokenizePartial(fullText: code, range: range)!;
 
       // Should include only tokens overlapping first line
       expect(tokens.map((t) => code.substring(t.start, t.end)).join(' '), contains('local x = 10'));
@@ -108,7 +108,7 @@ local y = x + 5
 
     test('tokenize range covering part of a line', () {
       final range = TextRange(start: 6, end: 12);
-      final tokens = tokenizer.tokenizePartial(fullText: code, range: range)!;
+      final tokens = lexer.tokenizePartial(fullText: code, range: range)!;
 
       expect(tokens[0].kind, SyntaxKind.identifier);
       expect(tokens[1].kind, SyntaxKind.operatorToken);
@@ -117,9 +117,9 @@ local y = x + 5
 
     test('tokenize multiple lines', () {
       final range = TextRange(start: 0, end: code.length);
-      final tokens = tokenizer.tokenizePartial(fullText: code, range: range)!;
+      final tokens = lexer.tokenizePartial(fullText: code, range: range)!;
 
-      expect(tokens.length, tokenizer.tokenize(code).length);
+      expect(tokens.length, lexer.tokenize(code).length);
     });
   });
 }

@@ -511,10 +511,10 @@ packages:
     dependency: transitive
     description:
       name: super_editor
-      sha256: "7f7ffdd29d2dfaa6dfef6d78d61f3b67d8d489fea8ed69864645038736499dce"
+      sha256: "8e6b43333b656a74645c6956ea4806ff77f4bc46d3cad51cbd4ba1a43c6b5282"
       url: "https://pub.dev"
     source: hosted
-    version: "0.3.0-dev.41"
+    version: "0.3.0-dev.43"
   super_keyboard:
     dependency: transitive
     description:
