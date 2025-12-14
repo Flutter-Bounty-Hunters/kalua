@@ -55,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
           for (int i = 0; i < _highlighter.lineCount; i += 1) //
             _highlighter.getStyledLineAt(i)!,
         ],
-        indentLineColor: Colors.grey,
+        indentLineColor: Colors.grey.shade800,
         baseTextStyle: TextStyle(fontSize: 14, fontFamily: "SourceCodePro"),
       ),
     );
