@@ -6,18 +6,18 @@ import 'package:kalua/src/luau/themes/luau_theme.dart';
 class LuauSyntaxHighlighter implements LexerTokenListener {
   LuauSyntaxHighlighter(this._theme) {
     _genericStyles = {
-      SyntaxKind.keyword: TextStyle(color: _theme.keyword, fontWeight: FontWeight.bold),
-      SyntaxKind.identifier: TextStyle(color: _theme.identifier),
-      SyntaxKind.string: TextStyle(color: _theme.string),
-      SyntaxKind.number: TextStyle(color: _theme.number),
-      SyntaxKind.comment: TextStyle(color: _theme.comment, fontStyle: FontStyle.italic),
-      SyntaxKind.operatorToken: TextStyle(color: _theme.operator),
-      SyntaxKind.punctuation: TextStyle(color: _theme.punctuation),
-      SyntaxKind.whitespace: TextStyle(color: _theme.whitespace),
-      SyntaxKind.unknown: TextStyle(color: _theme.unknown),
+      SyntaxKind.keyword: _theme.keyword,
+      SyntaxKind.identifier: _theme.identifier,
+      SyntaxKind.string: _theme.string,
+      SyntaxKind.number: _theme.number,
+      SyntaxKind.comment: _theme.comment,
+      SyntaxKind.operatorToken: _theme.operator,
+      SyntaxKind.punctuation: _theme.punctuation,
+      SyntaxKind.whitespace: _theme.whitespace,
+      SyntaxKind.unknown: _theme.unknown,
     };
 
-    _defaultStyle = TextStyle(color: _theme.baseTextColor, fontSize: 14.0);
+    _defaultStyle = _theme.baseTextStyle.copyWith(fontSize: 14, height: 2);
   }
 
   final LuauTheme _theme;
@@ -156,7 +156,7 @@ class LuauSyntaxHighlighter implements LexerTokenListener {
       final tokenText = text.substring(clippedStart, clippedEnd);
 
       // Decide token style: base tokenKind style, possibly overridden by token text.
-      TextStyle tokenKindStyle = _genericStyles[token.kind] ?? TextStyle(color: _theme.baseTextColor);
+      TextStyle tokenKindStyle = _genericStyles[token.kind] ?? _theme.baseTextStyle;
 
       // If tokenizer labeled this as an identifier but its literal text is a builtin type
       // color it like a number/type.
@@ -171,8 +171,6 @@ class LuauSyntaxHighlighter implements LexerTokenListener {
 
       // Ensure the final style explicitly sets color (merge with default)
       final effectiveStyle = _defaultStyle.merge(tokenKindStyle);
-
-      print("Token '$tokenText' -> ${token.kind}: ${effectiveStyle.color}");
 
       spans.add(TextSpan(text: tokenText.replaceAll('\n', ''), style: effectiveStyle));
 

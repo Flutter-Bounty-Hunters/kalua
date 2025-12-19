@@ -1,6 +1,28 @@
 import 'dart:ui';
 
 class EditorTheme {
+  factory EditorTheme.fromJson(Map<String, dynamic> json) {
+    return EditorTheme(
+      paneColor: Color(json['paneColor']),
+      paneDividerColor: Color(json['paneDividerColor']),
+      indentLineColor: Color(json['indentLineColor']),
+
+      background: Color(json['background']),
+      foreground: Color(json['foreground']),
+      caret: Color(json['caret']),
+      selection: Color(json['selection']),
+      inactiveSelection: Color(json['inactiveSelection']),
+      lineHighlight: Color(json['lineHighlight']),
+
+      gutterBackground: Color(json['gutterBackground']),
+      gutterBorder: Color(json['gutterBorder']),
+      gutterForeground: Color(json['gutterForeground']),
+
+      bracketHighlight: Color(json['bracketHighlight']),
+      invisibleCharacters: Color(json['invisibleCharacters']),
+    );
+  }
+
   const EditorTheme({
     required this.paneColor,
     required this.paneDividerColor,
@@ -61,4 +83,26 @@ class EditorTheme {
 
   /// Invisible characters (whitespace markers)
   final Color invisibleCharacters;
+
+  Map<String, dynamic> toJson() {
+    return {
+      'paneColor': paneColor.toARGB32(),
+      'paneDividerColor': paneDividerColor.toARGB32(),
+      'indentLineColor': indentLineColor.toARGB32(),
+
+      'background': background.toARGB32(),
+      'foreground': foreground.toARGB32(),
+      'caret': caret.toARGB32(),
+      'selection': selection.toARGB32(),
+      'inactiveSelection': inactiveSelection.toARGB32(),
+      'lineHighlight': lineHighlight.toARGB32(),
+
+      'gutterBackground': gutterBackground.toARGB32(),
+      'gutterBorder': gutterBorder.toARGB32(),
+      'gutterForeground': gutterForeground.toARGB32(),
+
+      'bracketHighlight': bracketHighlight.toARGB32(),
+      'invisibleCharacters': invisibleCharacters.toARGB32(),
+    };
+  }
 }

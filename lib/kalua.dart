@@ -13,5 +13,7 @@ export 'src/luau/luau_syntax_highlighter.dart';
 export 'src/luau/themes/luau_theme.dart';
 
 export 'src/themes/theme.dart';
+export 'src/themes/theme_blank_slate.dart';
 export 'src/themes/theme_github_light.dart';
 export 'src/themes/theme_obsidian.dart';
+export 'src/themes/theme_pineapple.dart';

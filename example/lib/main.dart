@@ -1,4 +1,5 @@
 import 'package:example/code_theme_selector.dart';
+import 'package:example/theme_configurator.dart';
 import 'package:flutter/material.dart';
 import 'package:inception/inception.dart';
 import 'package:kalua/kalua.dart';
@@ -26,7 +27,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   late final CodeDocument _code;
 
-  // KaluaTheme _theme = obsidianKaluaTheme;
   KaluaTheme _theme = githubLightKaluaTheme;
   late LuauSyntaxHighlighter _highlighter;
 
@@ -34,57 +34,82 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
 
-    _highlighter = LuauSyntaxHighlighter(_theme.luauCodeTheme);
+    _highlighter = LuauSyntaxHighlighter(_theme.luauTheme);
     _code = CodeDocument(_exampleCode);
 
-    // Do code highlight.
+    _highlightSyntax();
+  }
+
+  void _updateTheme(KaluaTheme newTheme) {
+    setState(() {
+      _theme = newTheme;
+      _highlightSyntax();
+    });
+  }
+
+  void _highlightSyntax() {
+    _highlighter.detachFromDocument();
+
+    // TODO: Expose ability to mutate the theme on the highlighter.
+    _highlighter = LuauSyntaxHighlighter(_theme.luauTheme);
     _highlighter.attachToDocument(_code);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _theme.editorTheme.paneColor,
-      body: Column(
-        children: [
-          // App bar
-          const SizedBox(height: 54),
-          Container(width: double.infinity, height: 1, color: _theme.editorTheme.paneDividerColor),
-          // Code editor
-          Expanded(
-            child: ColoredBox(
-              color: _theme.editorTheme.background,
-              child: CodeLines(
-                codeLines: [
-                  for (int i = 0; i < _highlighter.lineCount; i += 1) //
-                    _highlighter.getStyledLineAt(i)!,
+    return Theme(
+      data: ThemeData(brightness: _theme.brightness),
+      child: Scaffold(
+        backgroundColor: _theme.editorTheme.paneColor,
+        body: Column(
+          children: [
+            // App bar
+            const SizedBox(height: 54),
+            Container(width: double.infinity, height: 1, color: _theme.editorTheme.paneDividerColor),
+            // Code editor
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: ColoredBox(
+                      color: _theme.editorTheme.background,
+                      child: CodeLines(
+                        codeLines: [
+                          for (int i = 0; i < _highlighter.lineCount; i += 1) //
+                            _highlighter.getStyledLineAt(i)!,
+                        ],
+                        gutterColor: _theme.editorTheme.gutterBackground,
+                        gutterBorderColor: _theme.editorTheme.gutterBorder,
+                        lineBackgroundColor: _theme.editorTheme.background,
+                        indentLineColor: _theme.editorTheme.indentLineColor,
+                        baseTextStyle: TextStyle(
+                          color: _theme.editorTheme.foreground,
+                          fontSize: 14,
+                          fontFamily: "SourceCodePro",
+                        ),
+                      ),
+                    ),
+                  ),
+                  ThemeConfiguratorPane(theme: _theme, onThemeChange: _updateTheme),
                 ],
-                gutterColor: _theme.editorTheme.gutterBackground,
-                gutterBorderColor: _theme.editorTheme.gutterBorder,
-                lineBackgroundColor: _theme.editorTheme.background,
-                indentLineColor: _theme.editorTheme.indentLineColor,
-                baseTextStyle: TextStyle(
-                  color: _theme.editorTheme.foreground,
-                  fontSize: 14,
-                  fontFamily: "SourceCodePro",
-                ),
               ),
             ),
-          ),
-          // Bottom bar
-          _BottomBar(
-            currentTheme: _theme,
-            dividerColor: _theme.editorTheme.paneDividerColor,
-            onThemeSelected: (newTheme) {
-              setState(() {
-                _theme = newTheme;
-                _highlighter.detachFromDocument();
-                _highlighter = LuauSyntaxHighlighter(_theme.luauCodeTheme);
-                _highlighter.attachToDocument(_code);
-              });
-            },
-          ),
-        ],
+            // Bottom bar
+            _BottomBar(
+              currentTheme: _theme,
+              dividerColor: _theme.editorTheme.paneDividerColor,
+              onThemeSelected: (newTheme) {
+                setState(() {
+                  _theme = newTheme;
+                  _highlighter.detachFromDocument();
+                  _highlighter = LuauSyntaxHighlighter(_theme.luauTheme);
+                  _highlighter.attachToDocument(_code);
+                });
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -102,7 +127,7 @@ class _BottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 32,
+      height: 44,
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: dividerColor)),
       ),

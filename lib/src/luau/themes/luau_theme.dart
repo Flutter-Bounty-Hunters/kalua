@@ -4,8 +4,43 @@ import 'package:kalua/src/code/contextualizer.dart';
 
 /// Configurable color theme for Luau syntax highlighting and editor UI.
 class LuauTheme {
+  factory LuauTheme.fromJson(Map<String, dynamic> json) {
+    return LuauTheme(
+      baseTextStyle: textStyleFromJson(json['baseTextStyle']),
+
+      keyword: textStyleFromJson(json['keyword']),
+      controlFlow: textStyleFromJson(json['controlFlow']),
+      identifier: textStyleFromJson(json['identifier']),
+      functionName: textStyleFromJson(json['functionName']),
+      typeName: textStyleFromJson(json['typeName']),
+      string: textStyleFromJson(json['string']),
+      number: textStyleFromJson(json['number']),
+      boolean: textStyleFromJson(json['boolean']),
+      comment: textStyleFromJson(json['comment']),
+      documentationComment: textStyleFromJson(json['documentationComment']),
+
+      operator: textStyleFromJson(json['operator']),
+      arithmetic: textStyleFromJson(json['arithmetic']),
+      comparison: textStyleFromJson(json['comparison']),
+      logical: textStyleFromJson(json['logical']),
+      bitwise: textStyleFromJson(json['bitwise']),
+      assignment: textStyleFromJson(json['assignment']),
+      increment: textStyleFromJson(json['increment']),
+      ternary: textStyleFromJson(json['ternary']),
+      punctuation: textStyleFromJson(json['punctuation']),
+      comma: textStyleFromJson(json['comma']),
+      colon: textStyleFromJson(json['colon']),
+      semicolon: textStyleFromJson(json['semicolon']),
+      brackets: textStyleFromJson(json['brackets']),
+      genericBrace: textStyleFromJson(json['genericBrace']),
+
+      whitespace: textStyleFromJson(json['whitespace']),
+      unknown: textStyleFromJson(json['unknown']),
+    );
+  }
+
   const LuauTheme({
-    required this.baseTextColor,
+    required this.baseTextStyle,
 
     // Core syntax
     required this.keyword,
@@ -40,53 +75,53 @@ class LuauTheme {
     required this.unknown,
   });
 
-  final Color baseTextColor;
+  final TextStyle baseTextStyle;
 
   // ─────────────────────────────────────────────
   // Core syntax
   // ─────────────────────────────────────────────
 
-  final Color keyword;
-  final Color controlFlow;
-  final Color identifier;
-  final Color functionName;
-  final Color typeName;
+  final TextStyle keyword;
+  final TextStyle controlFlow;
+  final TextStyle identifier;
+  final TextStyle functionName;
+  final TextStyle typeName;
 
-  final Color string;
-  final Color number;
-  final Color boolean;
+  final TextStyle string;
+  final TextStyle number;
+  final TextStyle boolean;
 
-  final Color comment;
-  final Color documentationComment;
+  final TextStyle comment;
+  final TextStyle documentationComment;
 
   // ─────────────────────────────────────────────
   // Operators & punctuation
   // ─────────────────────────────────────────────
 
-  final Color operator;
-  final Color arithmetic;
-  final Color comparison;
-  final Color logical;
-  final Color bitwise;
-  final Color assignment;
-  final Color increment;
-  final Color ternary;
+  final TextStyle operator;
+  final TextStyle arithmetic;
+  final TextStyle comparison;
+  final TextStyle logical;
+  final TextStyle bitwise;
+  final TextStyle assignment;
+  final TextStyle increment;
+  final TextStyle ternary;
 
-  final Color punctuation;
-  final Color comma;
-  final Color colon;
-  final Color semicolon;
-  final Color brackets;
-  final Color genericBrace;
+  final TextStyle punctuation;
+  final TextStyle comma;
+  final TextStyle colon;
+  final TextStyle semicolon;
+  final TextStyle brackets;
+  final TextStyle genericBrace;
 
   // ─────────────────────────────────────────────
   // Misc / fallback
   // ─────────────────────────────────────────────
 
-  final Color whitespace;
-  final Color unknown;
+  final TextStyle whitespace;
+  final TextStyle unknown;
 
-  Color colorForSemanticKind(SemanticKind kind) {
+  TextStyle styleForSemanticKind(SemanticKind kind) {
     switch (kind) {
       case SemanticKind.keyword:
         return keyword;
@@ -146,4 +181,62 @@ class LuauTheme {
         return unknown;
     }
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'baseTextStyle': textStyleToJson(baseTextStyle),
+
+      // Core syntax
+      'keyword': textStyleToJson(keyword),
+      'controlFlow': textStyleToJson(controlFlow),
+      'identifier': textStyleToJson(identifier),
+      'functionName': textStyleToJson(functionName),
+      'typeName': textStyleToJson(typeName),
+      'string': textStyleToJson(string),
+      'number': textStyleToJson(number),
+      'boolean': textStyleToJson(boolean),
+      'comment': textStyleToJson(comment),
+      'documentationComment': textStyleToJson(documentationComment),
+
+      // Operators & punctuation
+      'operator': textStyleToJson(operator),
+      'arithmetic': textStyleToJson(arithmetic),
+      'comparison': textStyleToJson(comparison),
+      'logical': textStyleToJson(logical),
+      'bitwise': textStyleToJson(bitwise),
+      'assignment': textStyleToJson(assignment),
+      'increment': textStyleToJson(increment),
+      'ternary': textStyleToJson(ternary),
+      'punctuation': textStyleToJson(punctuation),
+      'comma': textStyleToJson(comma),
+      'colon': textStyleToJson(colon),
+      'semicolon': textStyleToJson(semicolon),
+      'brackets': textStyleToJson(brackets),
+      'genericBrace': textStyleToJson(genericBrace),
+
+      // Misc
+      'whitespace': textStyleToJson(whitespace),
+      'unknown': textStyleToJson(unknown),
+    };
+  }
+}
+
+Map<String, dynamic> textStyleToJson(TextStyle style) {
+  return {
+    'color': style.color?.toARGB32(),
+    'fontWeight': style.fontWeight?.index,
+    'fontStyle': style.fontStyle?.index,
+    'letterSpacing': style.letterSpacing,
+    'height': style.height,
+  };
+}
+
+TextStyle textStyleFromJson(Map<String, dynamic> json) {
+  return TextStyle(
+    color: json['color'] != null ? Color(json['color']) : null,
+    fontWeight: json['fontWeight'] != null ? FontWeight.values[json['fontWeight']] : null,
+    fontStyle: json['fontStyle'] != null ? FontStyle.values[json['fontStyle']] : null,
+    letterSpacing: (json['letterSpacing'] as num?)?.toDouble(),
+    height: (json['height'] as num?)?.toDouble(),
+  );
 }
