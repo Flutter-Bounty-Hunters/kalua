@@ -1,11 +1,27 @@
-import 'dart:ui';
-
 import 'package:flutter/painting.dart';
+import 'package:kalua/src/code/code_document.dart';
 import 'package:kalua/src/code/lexing.dart';
+import 'package:kalua/src/luau/themes/luau_theme.dart';
 
-import 'code_document.dart';
+class LuauSyntaxHighlighter implements LexerTokenListener {
+  LuauSyntaxHighlighter(this._theme) {
+    _genericStyles = {
+      SyntaxKind.keyword: _theme.keyword,
+      SyntaxKind.identifier: _theme.identifier,
+      SyntaxKind.string: _theme.string,
+      SyntaxKind.number: _theme.number,
+      SyntaxKind.comment: _theme.comment,
+      SyntaxKind.operatorToken: _theme.operator,
+      SyntaxKind.punctuation: _theme.punctuation,
+      SyntaxKind.whitespace: _theme.whitespace,
+      SyntaxKind.unknown: _theme.unknown,
+    };
 
-class DeprecatedLuauSyntaxHighlighter implements LexerTokenListener {
+    _defaultStyle = _theme.baseTextStyle.copyWith(fontSize: 14, height: 2);
+  }
+
+  final LuauTheme _theme;
+
   CodeDocument? _attachedDocument;
 
   int get lineCount => _lineSpans.length;
@@ -75,6 +91,8 @@ class DeprecatedLuauSyntaxHighlighter implements LexerTokenListener {
   }
 
   void _rebuildAllLines() {
+    print("_rebuildAllLines()");
+    print(" - default style color: ${_defaultStyle.color}");
     final doc = _attachedDocument;
     if (doc == null) return;
 
@@ -89,39 +107,9 @@ class DeprecatedLuauSyntaxHighlighter implements LexerTokenListener {
   // ---------------------
 
   // Default text style applied to any plain text or merged with token styles.
-  TextStyle get _defaultStyle => const TextStyle(color: Color(0xFFD4D4D4), fontSize: 14.0);
+  late TextStyle _defaultStyle;
 
-  Map<SyntaxKind, TextStyle> get _tokenStyles => _obsidianStyleMap;
-
-  /// Maps token kinds to text styles
-  final Map<SyntaxKind, TextStyle> _genericStyles = {
-    SyntaxKind.keyword: const TextStyle(color: Color(0xFF569CD6), fontWeight: FontWeight.bold),
-    SyntaxKind.identifier: const TextStyle(color: Color(0xFFD4D4D4)),
-    SyntaxKind.string: const TextStyle(color: Color(0xFFCE9178)),
-    SyntaxKind.number: const TextStyle(color: Color(0xFFB5CEA8)),
-    SyntaxKind.comment: const TextStyle(color: Color(0xFF6A9955), fontStyle: FontStyle.italic),
-    SyntaxKind.operatorToken: const TextStyle(color: Color(0xFFD4D4D4)),
-    SyntaxKind.punctuation: const TextStyle(color: Color(0xFFD4D4D4)),
-    SyntaxKind.whitespace: const TextStyle(color: Color(0xFFD4D4D4)),
-    SyntaxKind.unknown: const TextStyle(color: Color(0xFFFF0000)),
-  };
-
-  final Map<SyntaxKind, TextStyle> _obsidianStyleMap = {
-    SyntaxKind.keyword: const TextStyle(color: Color(0xFF569CD6), fontWeight: FontWeight.bold), // bluish keywords
-    SyntaxKind.identifier: const TextStyle(color: Color(0xFFD4D4D4)), // default code text
-    SyntaxKind.string: const TextStyle(color: Color(0xFFCE9178)), // warm string color
-    SyntaxKind.number: const TextStyle(color: Color(0xFFB5CEA8)), // green-ish numbers
-    SyntaxKind.comment: const TextStyle(color: Color(0xFF6A9955), fontStyle: FontStyle.italic), // muted green comments
-    SyntaxKind.operatorToken: const TextStyle(color: Color(0xFFD4D4D4)), // same as normal text
-    // Assignment needs to be inferred during highlighting, not during tokenization, to keep tokenization
-    // more stable.
-    // SyntaxKind.assignment: TextStyle(color: Color(0xFF9CDCFE), fontWeight: FontWeight.bold),
-    SyntaxKind.punctuation: const TextStyle(color: Color(0xFFD4D4D4)), // punctuation neutral
-    // Generic braces need to be inferred during highlighting, not during tokenization, to keep tokenization
-    // more stable.
-    // SyntaxKind.genericBrace: TextStyle(color: Color(0xFF4FC1FF)), // light blue braces
-    SyntaxKind.unknown: const TextStyle(color: Color(0xFFFF0000)), // bright red for unknown/error
-  };
+  late final Map<SyntaxKind, TextStyle> _genericStyles;
 
   // Builtin Luau type names we want to color specially even if tokenizer marks as identifier.
   static const Set<String> _builtinTypes = {
@@ -168,17 +156,17 @@ class DeprecatedLuauSyntaxHighlighter implements LexerTokenListener {
       final tokenText = text.substring(clippedStart, clippedEnd);
 
       // Decide token style: base tokenKind style, possibly overridden by token text.
-      TextStyle tokenKindStyle = _tokenStyles[token.kind] ?? _genericStyles[token.kind] ?? const TextStyle();
+      TextStyle tokenKindStyle = _genericStyles[token.kind] ?? _theme.baseTextStyle;
 
       // If tokenizer labeled this as an identifier but its literal text is a builtin type
       // color it like a number/type.
       if (token.kind == SyntaxKind.identifier && _builtinTypes.contains(tokenText)) {
-        tokenKindStyle = _tokenStyles[SyntaxKind.number] ?? _genericStyles[SyntaxKind.number]!;
+        tokenKindStyle = _genericStyles[SyntaxKind.number]!;
       }
 
       // Also highlight the token "type" as a keyword-ish indicator if it appears.
       if (token.kind == SyntaxKind.identifier && tokenText == 'type') {
-        tokenKindStyle = _tokenStyles[SyntaxKind.keyword] ?? _genericStyles[SyntaxKind.keyword]!;
+        tokenKindStyle = _genericStyles[SyntaxKind.keyword]!;
       }
 
       // Ensure the final style explicitly sets color (merge with default)

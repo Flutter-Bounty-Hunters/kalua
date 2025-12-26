@@ -1,3 +1,5 @@
+import 'package:example/code_theme_selector.dart';
+import 'package:example/theme_configurator.dart';
 import 'package:flutter/material.dart';
 import 'package:inception/inception.dart';
 import 'package:kalua/kalua.dart';
@@ -24,39 +26,123 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late final CodeDocument _code;
-  late final LuauSyntaxHighlighter _highlighter;
+
+  KaluaTheme _theme = githubLightKaluaTheme;
+  late LuauSyntaxHighlighter _highlighter;
 
   @override
   void initState() {
     super.initState();
 
-    _highlightExampleCode();
-  }
-
-  void _highlightExampleCode() {
+    _highlighter = LuauSyntaxHighlighter(_theme.luauTheme);
     _code = CodeDocument(_exampleCode);
 
-    _highlighter = LuauSyntaxHighlighter();
-    _highlighter.attachToDocument(_code);
+    _highlightSyntax();
+  }
 
-    print("Tokens:");
-    for (final token in _code.tokens) {
-      print(" - ${token.start} -> ${token.end}: ${token.kind}");
-    }
-    print("------");
+  void _updateTheme(KaluaTheme newTheme) {
+    setState(() {
+      _theme = newTheme;
+      _highlightSyntax();
+    });
+  }
+
+  void _highlightSyntax() {
+    _highlighter.detachFromDocument();
+
+    // TODO: Expose ability to mutate the theme on the highlighter.
+    _highlighter = LuauSyntaxHighlighter(_theme.luauTheme);
+    _highlighter.attachToDocument(_code);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF282828),
-      body: CodeLines(
-        codeLines: [
-          for (int i = 0; i < _highlighter.lineCount; i += 1) //
-            _highlighter.getStyledLineAt(i)!,
-        ],
-        indentLineColor: Colors.grey.shade800,
-        baseTextStyle: TextStyle(fontSize: 14, fontFamily: "SourceCodePro"),
+    return Theme(
+      data: ThemeData(brightness: _theme.brightness),
+      child: Scaffold(
+        backgroundColor: _theme.editorTheme.paneColor,
+        body: Column(
+          children: [
+            // App bar
+            const SizedBox(height: 54),
+            Container(width: double.infinity, height: 1, color: _theme.editorTheme.paneDividerColor),
+            // Code editor
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: ColoredBox(
+                      color: _theme.editorTheme.background,
+                      child: CodeLines(
+                        codeLines: [
+                          for (int i = 0; i < _highlighter.lineCount; i += 1) //
+                            _highlighter.getStyledLineAt(i)!,
+                        ],
+                        gutterColor: _theme.editorTheme.gutterBackground,
+                        gutterBorderColor: _theme.editorTheme.gutterBorder,
+                        lineBackgroundColor: _theme.editorTheme.background,
+                        indentLineColor: _theme.editorTheme.indentLineColor,
+                        baseTextStyle: TextStyle(
+                          color: _theme.editorTheme.foreground,
+                          fontSize: 14,
+                          fontFamily: "SourceCodePro",
+                        ),
+                      ),
+                    ),
+                  ),
+                  ThemeConfiguratorPane(theme: _theme, onThemeChange: _updateTheme),
+                ],
+              ),
+            ),
+            // Bottom bar
+            _BottomBar(
+              currentTheme: _theme,
+              dividerColor: _theme.editorTheme.paneDividerColor,
+              onThemeSelected: (newTheme) {
+                setState(() {
+                  _theme = newTheme;
+                  _highlighter.detachFromDocument();
+                  _highlighter = LuauSyntaxHighlighter(_theme.luauTheme);
+                  _highlighter.attachToDocument(_code);
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomBar extends StatelessWidget {
+  const _BottomBar({required this.currentTheme, required this.dividerColor, required this.onThemeSelected});
+
+  final KaluaTheme currentTheme;
+
+  final Color dividerColor;
+
+  final void Function(KaluaTheme) onThemeSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: dividerColor)),
+      ),
+      child: Center(
+        child: CodeThemeSelector(
+          currentTheme: currentTheme,
+          onThemeSelected: (newTheme) {
+            if (newTheme == null) {
+              // Fizzle.
+              return;
+            }
+
+            onThemeSelected(newTheme);
+          },
+        ),
       ),
     );
   }

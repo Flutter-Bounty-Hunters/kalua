@@ -11,5 +11,16 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
 
     super.awakeFromNib()
+
+    self.setContentSize(NSSize(width: 1400, height: 850))
+
+    // Hide the titlebar and let content flow behind it.
+    self.styleMask.insert([.fullSizeContentView])
+    self.titleVisibility = TitleVisibility.hidden
+    self.titlebarAppearsTransparent = true
+
+    // Create a toolbar and make it unified so we can push down the traffic lights.
+    self.toolbar = NSToolbar()
+    self.toolbarStyle = .unified
   }
 }
